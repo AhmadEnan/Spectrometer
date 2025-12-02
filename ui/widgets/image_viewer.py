@@ -45,6 +45,8 @@ class ImageViewer(QWidget):
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image_label.setStyleSheet("background-color: #1a1a1a;")
         self.image_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.image_label.setMinimumSize(1, 1)  # Prevent layout expansion loop
+
         
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)

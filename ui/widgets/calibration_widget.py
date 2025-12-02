@@ -16,6 +16,9 @@ import numpy as np
 import logging
 
 from calibration import CalibrationModel, PeakDetector, ProfileManager
+from .spectrum_graph import SpectrumGraph
+from .calibration_marker_dialog import CalibrationMarkerDialog
+
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +87,39 @@ class CalibrationWidget(QWidget):
         add_layout.addLayout(manual_layout)
         add_group.setLayout(add_layout)
         layout.addWidget(add_group)
+
+        # Visual calibration
+        visual_group = QGroupBox("Visual Calibration")
+        visual_layout = QVBoxLayout()
         
+        # Toggle button and status
+        visual_controls = QHBoxLayout()
+        self.visual_mode_btn = QPushButton("Enable Visual Mode")
+        self.visual_mode_btn.setCheckable(True)
+        self.visual_mode_btn.setStyleSheet("""
+            QPushButton:checked {
+                background-color: #0d7377;
+                color: white;
+            }
+        """)
+        visual_controls.addWidget(self.visual_mode_btn)
+        
+        self.visual_status_label = QLabel("Visual mode inactive")
+        self.visual_status_label.setStyleSheet("color: #888;")
+        visual_controls.addWidget(self.visual_status_label)
+        visual_controls.addStretch()
+        
+        visual_layout.addLayout(visual_controls)
+        
+        # Embedded spectrum graph
+        self.spectrum_graph = SpectrumGraph()
+        self.spectrum_graph.setMinimumHeight(250)
+        visual_layout.addWidget(self.spectrum_graph)
+        
+        visual_group.setLayout(visual_layout)
+        layout.addWidget(visual_group)
+        
+
         # Calibration points table
         table_group = QGroupBox("Calibration Points")
         table_layout = QVBoxLayout()
@@ -138,17 +173,27 @@ class CalibrationWidget(QWidget):
         self.fit_btn.clicked.connect(self._on_fit)
         self.load_btn.clicked.connect(self._on_load_profile)
         self.save_btn.clicked.connect(self._on_save_profile)
+        
+        # Visual calibration signals
+        self.visual_mode_btn.toggled.connect(self._on_visual_mode_toggled)
+        self.spectrum_graph.point_clicked.connect(self._on_graph_point_clicked)
+
     
-    def set_intensity_profile(self, pixel_positions: np.ndarray, intensity: np.ndarray) -> None:
+    def set_intensity_profile(self, pixel_positions: np.ndarray, intensity: np.ndarray, spectrum_strip: Optional[np.ndarray] = None) -> None:
         """
-        Set the current intensity profile for peak detection.
+        Set the current intensity profile for peak detection and visual calibration.
         
         Args:
             pixel_positions: Pixel positions
             intensity: Intensity values
+            spectrum_strip: Optional color strip image
         """
         self.current_intensity = intensity
         logger.info(f"Set intensity profile with {len(intensity)} points")
+        
+        # Update embedded graph for visual calibration
+        self.spectrum_graph.set_data(pixel_positions, intensity, spectrum_strip=spectrum_strip)
+
     
     def _on_detect_peaks(self) -> None:
         """Detect peaks in intensity profile."""
@@ -218,6 +263,10 @@ class CalibrationWidget(QWidget):
             delete_btn = QPushButton("Delete")
             delete_btn.clicked.connect(lambda checked, idx=i: self._delete_point(idx))
             self.points_table.setCellWidget(i, 2, delete_btn)
+        
+        # Sync visual markers with calibration points
+        self._sync_visual_markers()
+
     
     def _delete_point(self, index: int) -> None:
         """Delete a calibration point."""
@@ -266,3 +315,51 @@ class CalibrationWidget(QWidget):
                 QMessageBox.information(self, "Success", f"Saved profile: {name}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save profile: {e}")
+    
+    def _on_visual_mode_toggled(self, enabled: bool) -> None:
+        """Handle visual calibration mode toggle."""
+        self.spectrum_graph.set_interactive_mode(enabled)
+        
+        if enabled:
+            self.visual_mode_btn.setText("Disable Visual Mode")
+            self.visual_status_label.setText("Click on peaks to add calibration points")
+            self.visual_status_label.setStyleSheet("color: #0d7377; font-weight: bold;")
+        else:
+            self.visual_mode_btn.setText("Enable Visual Mode")
+            self.visual_status_label.setText("Visual mode inactive")
+            self.visual_status_label.setStyleSheet("color: #888;")
+        
+        logger.info(f"Visual calibration mode: {'enabled' if enabled else 'disabled'}")
+    
+    def _on_graph_point_clicked(self, x_position: float) -> None:
+        """Handle click on spectrum graph in visual mode."""
+        # Show dialog to enter wavelength
+        dialog = CalibrationMarkerDialog(x_position, self)
+        
+        if dialog.exec():
+            pixel, wavelength, label = dialog.get_values()
+            
+            # Add to calibration model
+            self.model.add_point(pixel, wavelength, label)
+            
+            # Add visual marker to graph
+            self.spectrum_graph.add_calibration_marker(pixel, wavelength, label)
+            
+            # Update table
+            self._update_table()
+            
+            logger.info(f"Added calibration point via visual mode: pixel={pixel:.2f}, λ={wavelength}nm")
+    
+    def _sync_visual_markers(self) -> None:
+        """Synchronize visual markers on graph with calibration points."""
+        # Prepare list of markers
+        markers = []
+        for point in self.model.points:
+            markers.append((
+                point.pixel,
+                point.wavelength,
+                point.label or ""
+            ))
+            
+        # Update graph in one go
+        self.spectrum_graph.set_calibration_markers(markers)

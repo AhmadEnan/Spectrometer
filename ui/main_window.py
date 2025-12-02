@@ -366,8 +366,9 @@ class MainWindow(QMainWindow):
             # Update graph
             self.static_graph.set_data(pixel_pos, intensity, wavelengths, color_strip)
             
-            # Update calibration widget with intensity profile
-            self.calibration_widget.set_intensity_profile(pixel_pos, intensity)
+            # Update calibration widget with intensity profile and color strip
+            self.calibration_widget.set_intensity_profile(pixel_pos, intensity, color_strip)
+
             
             self.status_bar.showMessage("Spectrum analyzed")
             self.inspector.set_status(f"Spectrum extracted ({len(intensity)} points)")

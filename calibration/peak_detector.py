@@ -74,10 +74,13 @@ class PeakDetector:
         prominence_abs = self.prominence * np.ptp(intensity)
         
         # Find peaks
+        # Ensure widths are calculated for confidence metric
+        width_arg = self.width if self.width is not None else (1, None)
+        
         peak_indices, properties = find_peaks(
             intensity,
             prominence=prominence_abs,
-            width=self.width,
+            width=width_arg,
             distance=self.distance,
             height=self.height
         )

@@ -10,10 +10,12 @@ from typing import Optional, Tuple
 import logging
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSizePolicy
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
+
 
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import NavigationToolbar2QT as NavigationToolbar
 from matplotlib.gridspec import GridSpec
 from scipy.signal import savgol_filter
 
@@ -25,6 +27,7 @@ class SpectrumGraph(QWidget):
     
     # Signals
     position_hovered = Signal(float)  # Emits x-position when mouse hovers
+    point_clicked = Signal(float)  # Emits x-position when clicked (interactive mode)
     
     def __init__(self, parent=None):
         """Initialize spectrum graph widget."""
@@ -42,14 +45,26 @@ class SpectrumGraph(QWidget):
         self.savgol_window = 11
         self.savgol_order = 3
         
-        # Create matplotlib figure
-        self.figure = Figure(figsize=(8, 4), facecolor='#2b2b2b')
+        # Interactive calibration mode
+        self.interactive_mode = False
+        self.calibration_markers = []  # List of (x_pos, wavelength, label)
+        
+        # Create matplotlib figure with constrained_layout
+        self.figure = Figure(figsize=(8, 4), facecolor='#2b2b2b', constrained_layout=True)
         self.canvas = FigureCanvas(self.figure)
         self.canvas.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.canvas.setStyleSheet("background-color: #2b2b2b;")
+        
+        # Add navigation toolbar (hidden by default, or visible?)
+        # Let's make it visible but compact, or just standard
+        self.toolbar = NavigationToolbar(self.canvas, self)
+        self.toolbar.setStyleSheet("background-color: #333; color: white;")
         
         # Layout
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self.toolbar)
         layout.addWidget(self.canvas)
         
         # Create subplots
@@ -57,8 +72,11 @@ class SpectrumGraph(QWidget):
         
         # Mouse interaction
         self.canvas.mpl_connect('motion_notify_event', self._on_mouse_move)
+        self.canvas.mpl_connect('button_press_event', self._on_mouse_click)
         
         self._cursor_line = None
+        self._marker_lines = []  # Visual marker lines
+        self._marker_texts = []  # Visual marker labels
     
     def _setup_plots(self) -> None:
         """Set up matplotlib subplots."""
@@ -86,7 +104,8 @@ class SpectrumGraph(QWidget):
         self.graph_ax.set_xlabel('Pixel Position', color='white')
         self.graph_ax.set_ylabel('Intensity', color='white')
         
-        self.figure.tight_layout()
+        
+
     
     def set_data(
         self,
@@ -188,7 +207,11 @@ class SpectrumGraph(QWidget):
         # Grid
         self.graph_ax.grid(True, alpha=0.2, color='white')
         
-        self.figure.tight_layout()
+
+        
+        # Draw calibration markers
+        self._draw_calibration_markers()
+        
         self.canvas.draw()
     
     def _on_mouse_move(self, event) -> None:
@@ -196,7 +219,7 @@ class SpectrumGraph(QWidget):
         if event.inaxes in [self.graph_ax, self.strip_ax] and event.xdata is not None:
             # Draw cursor line
             if self._cursor_line is not None:
-                self._cursor_line.remove()
+                self._cursor_line.set_visible(False)
             
             self._cursor_line = self.graph_ax.axvline(
                 event.xdata, color='yellow', linewidth=1, alpha=0.7
@@ -253,3 +276,128 @@ class SpectrumGraph(QWidget):
         self.strip_ax.clear()
         self.graph_ax.clear()
         self.canvas.draw()
+    
+    def _on_mouse_click(self, event) -> None:
+        """Handle mouse click event."""
+        if not self.interactive_mode:
+            return
+        
+        if event.inaxes == self.graph_ax and event.xdata is not None:
+            # Emit signal for click on graph
+            self.point_clicked.emit(event.xdata)
+    
+    def set_interactive_mode(self, enabled: bool) -> None:
+        """
+        Enable/disable interactive calibration mode.
+        
+        Args:
+            enabled: True to enable click-to-calibrate, False to disable
+        """
+        self.interactive_mode = enabled
+        
+        # Change cursor style
+        if enabled:
+            self.canvas.setCursor(Qt.CursorShape.CrossCursor)
+        else:
+            self.canvas.setCursor(Qt.CursorShape.ArrowCursor)
+        
+        logger.info(f"Interactive calibration mode: {'enabled' if enabled else 'disabled'}")
+    
+    def add_calibration_marker(
+        self,
+        x_pos: float,
+        wavelength: float,
+        label: str = ""
+    ) -> None:
+        """
+        Add a calibration marker at specified position.
+        
+        Args:
+            x_pos: X position (pixel or wavelength)
+            wavelength: Wavelength value in nm
+            label: Optional label for the marker
+        """
+        self.calibration_markers.append((x_pos, wavelength, label))
+        logger.info(f"Added calibration marker at x={x_pos:.2f}, λ={wavelength}nm")
+        
+        # Redraw if we have data
+        if self.pixel_positions is not None:
+            self.plot()
+    
+    def set_calibration_markers(
+        self,
+        markers: list[tuple[float, float, str]]
+    ) -> None:
+        """
+        Set all calibration markers at once.
+        
+        Args:
+            markers: List of (x_pos, wavelength, label) tuples
+        """
+        self.calibration_markers = markers
+        logger.info(f"Set {len(markers)} calibration markers")
+        
+        if self.pixel_positions is not None:
+            self.plot()
+    
+    def remove_calibration_marker(self, index: int) -> None:
+        """
+        Remove a calibration marker by index.
+        
+        Args:
+            index: Index of marker to remove
+        """
+        if 0 <= index < len(self.calibration_markers):
+            removed = self.calibration_markers.pop(index)
+            logger.info(f"Removed calibration marker: {removed}")
+            
+            if self.pixel_positions is not None:
+                self.plot()
+    
+    def clear_calibration_markers(self) -> None:
+        """Clear all calibration markers."""
+        self.calibration_markers.clear()
+        logger.info("Cleared all calibration markers")
+        
+        if self.pixel_positions is not None:
+            self.plot()
+    
+    def _draw_calibration_markers(self) -> None:
+        """Draw calibration markers on the graph."""
+        # Clear old marker visuals by setting visibility to False
+        for line in self._marker_lines:
+            line.set_visible(False)
+        for text in self._marker_texts:
+            text.set_visible(False)
+        
+        self._marker_lines.clear()
+        self._marker_texts.clear()
+        
+        # Draw new markers
+        for x_pos, wavelength, label in self.calibration_markers:
+            # Vertical line
+            line = self.graph_ax.axvline(
+                x_pos,
+                color='cyan',
+                linewidth=2,
+                linestyle='--',
+                alpha=0.8
+            )
+            self._marker_lines.append(line)
+            
+            # Label text
+            display_label = f"{wavelength:.1f}nm"
+            if label:
+                display_label = f"{label}\n{wavelength:.1f}nm"
+            
+            text = self.graph_ax.text(
+                x_pos,
+                self.graph_ax.get_ylim()[1] * 0.95,
+                display_label,
+                color='cyan',
+                fontsize=9,
+                ha='center',
+                va='top',
+                bbox=dict(boxstyle='round,pad=0.3', facecolor='#2b2b2b', edgecolor='cyan', alpha=0.8)
+            )
+            self._marker_texts.append(text)

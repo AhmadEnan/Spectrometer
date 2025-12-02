@@ -1,0 +1,30 @@
+{
+  "app": {
+    "theme": "dark",
+    "window_geometry": null,
+    "recent_files": [],
+    "max_recent_files": 10
+  },
+  "processing": {
+    "default_thickness": 5,
+    "default_smoothing": 50,
+    "background_removal": 0,
+    "auto_detect": false
+  },
+  "calibration": {
+    "polynomial_order": 2,
+    "recent_profiles": [],
+    "max_recent_profiles": 5
+  },
+  "video": {
+    "default_source": 0,
+    "fps_target": 30,
+    "temporal_smoothing": 0.7
+  },
+  "graph": {
+    "show_smoothed": true,
+    "scale": "linear",
+    "savgol_window": 11,
+    "savgol_order": 3
+  }
+}

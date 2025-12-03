@@ -101,7 +101,7 @@ class SpectrumGraph(QWidget):
         self.graph_ax.spines['right'].set_visible(False)
         
         # Labels
-        self.graph_ax.set_xlabel('Pixel Position', color='white')
+        self.graph_ax.set_xlabel('Wavelength (nm)', color='white')
         self.graph_ax.set_ylabel('Intensity', color='white')
         
         
@@ -156,10 +156,10 @@ class SpectrumGraph(QWidget):
         # Determine x-axis (pixels or wavelengths)
         if self.wavelengths is not None:
             x_data = self.wavelengths
-            xlabel = 'Wavelength (nm)'
+            xlabel = 'Pixel position'
         else:
             x_data = self.pixel_positions
-            xlabel = 'Pixel Position'
+            xlabel = 'Wavelength (nm)'
         
         # Plot raw intensity
         self.graph_ax.plot(
